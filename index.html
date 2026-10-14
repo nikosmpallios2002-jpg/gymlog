@@ -1,0 +1,1909 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!-- viewport-fit=cover lets the page use the full iPhone screen (under the notch);
+     we then pad content with env(safe-area-inset-*) so nothing hides behind it. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#101418">
+<!-- Home-screen ("standalone") behaviour on iOS -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Gym Log">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="manifest" href="manifest.json">
+<title>Gym Log</title>
+
+<style>
+/* ==================================================================
+   THEME TOKENS
+   All colours live here as CSS variables, so the dark/light switch
+   is a single block instead of edits spread across the file.
+   ================================================================== */
+:root {
+  --bg: #101418;
+  --surface: #1a2027;
+  --surface-2: #232b34;
+  --border: #2e3843;
+  --text: #e8edf2;
+  --muted: #8b98a5;
+  --accent: #3b82f6;
+  --accent-text: #ffffff;
+  --ok: #22c55e;
+  --danger: #ef4444;
+  --radius: 12px;
+  --tabbar-h: 56px;
+  --timer-h: 112px;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f3f5f8;
+    --surface: #ffffff;
+    --surface-2: #eef1f5;
+    --border: #d9dee5;
+    --text: #14181d;
+    --muted: #5f6b78;
+    color-scheme: light;
+  }
+}
+
+/* The [hidden] attribute must win over any display rule below. */
+[hidden] { display: none !important; }
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  -webkit-text-size-adjust: 100%;
+}
+/* Leave room at the bottom for the fixed tab bar (and the timer when visible). */
+body { padding-top: var(--safe-top); padding-bottom: calc(var(--tabbar-h) + var(--safe-bottom) + 16px); }
+body.timer-on { padding-bottom: calc(var(--tabbar-h) + var(--timer-h) + var(--safe-bottom) + 16px); }
+
+h2 { font-size: 17px; margin: 0 0 10px; }
+
+button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+button:disabled { opacity: .4; cursor: default; }
+
+/* font-size >= 16px is important: iOS zooms the page when focusing a smaller input. */
+input, select {
+  font: inherit; font-size: 16px;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  width: 100%;
+}
+input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+input[type="checkbox"] { width: 22px; height: 22px; padding: 0; accent-color: var(--accent); flex: none; }
+
+/* ---------- layout ---------- */
+header.app {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  padding: 14px 16px 10px; max-width: 640px; margin: 0 auto;
+}
+header.app h1 { font-size: 24px; margin: 0; letter-spacing: -.01em; flex: none; }
+header.app .sub { color: var(--muted); font-size: 14px; text-align: right; }
+main { padding: 0 16px; max-width: 640px; margin: 0 auto; }
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+  margin-bottom: 12px;
+}
+.muted { color: var(--muted); }
+.small { font-size: 14px; }
+.center { text-align: center; }
+.row { display: flex; gap: 8px; align-items: center; }
+.row.wrap { flex-wrap: wrap; }
+.between { justify-content: space-between; }
+.grow { flex: 1; min-width: 0; }
+.mt { margin-top: 10px; }
+
+/* ---------- buttons ---------- */
+.btn {
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  border-radius: 10px;
+  padding: 10px 14px;
+  min-height: 44px;              /* Apple's minimum comfortable tap size */
+}
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+.btn.danger { color: var(--danger); }
+.btn.block { width: 100%; display: block; }
+.btn.small { min-height: 38px; padding: 6px 12px; font-size: 15px; }
+label.btn { display: inline-flex; align-items: center; }
+.icon-btn {
+  width: 38px; height: 38px; padding: 0; flex: none;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); font-size: 16px;
+}
+
+/* ---------- week view (Workout tab, no workout running) ---------- */
+.week-head { display: flex; justify-content: space-between; align-items: flex-end; margin: 4px 2px 10px; }
+.week-head h2 { margin: 0; }
+.pill {
+  font-size: 13px; padding: 4px 10px; border-radius: 999px;
+  background: var(--surface-2); border: 1px solid var(--border); color: var(--muted); white-space: nowrap;
+}
+.wk-top { display: flex; gap: 12px; align-items: center; }
+.tick {
+  width: 34px; height: 34px; border-radius: 50%; flex: none;
+  border: 2px solid var(--border); display: grid; place-items: center;
+  font-weight: 700; color: var(--muted);
+}
+.wk.done .tick { background: var(--ok); border-color: var(--ok); color: #fff; }
+.wk-title { font-size: 17px; font-weight: 650; }
+.badge {
+  display: inline-block; margin-left: 6px; padding: 2px 8px; border-radius: 999px; vertical-align: 2px;
+  background: var(--accent); color: #fff; font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+}
+.wk-ex { margin-top: 8px; }
+
+/* ---------- plan tab ---------- */
+.stepper { display: flex; align-items: center; gap: 4px; flex: none; }
+.stepper button {
+  width: 44px; height: 44px; border-radius: 10px; font-size: 22px;
+  border: 1px solid var(--border); background: var(--surface-2);
+}
+.stepper span { min-width: 32px; text-align: center; font-size: 22px; font-weight: 700; }
+.wk-name { font-weight: 650; font-size: 17px; }
+.plan-ex { border-top: 1px solid var(--border); padding: 10px 0; }
+.plan-ex:first-of-type { margin-top: 10px; }
+.plan-ex-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.plan-ex-name { font-weight: 600; }
+.plan-ex-fields { display: flex; gap: 16px; margin-top: 6px; }
+.plan-ex-fields label { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 15px; }
+.plan-ex-fields input { width: 64px; text-align: center; padding: 6px; }
+
+/* ---------- exercise card (running workout) ---------- */
+.ex-name { font-size: 19px; font-weight: 650; margin: 0; }
+.ex-last { font-size: 13px; color: var(--muted); margin-top: 2px; }
+.rest-line { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 10px; }
+.rest-line label { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 15px; }
+.rest-input { width: 72px; text-align: center; padding: 6px; }
+
+/* One grid row per set:  #  |  kg  |  ×  |  reps  |  ✓  |  remove */
+.set-grid { display: grid; grid-template-columns: 24px 1fr 12px 1fr 52px 30px; gap: 6px; align-items: center; }
+.sets-head { margin-top: 12px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+.sets-head span { text-align: center; }
+.set-row { margin-top: 6px; }
+.set-row .num { color: var(--muted); text-align: center; font-weight: 600; }
+.set-row .x { color: var(--muted); text-align: center; }
+.set-row input { text-align: center; padding: 10px 4px; font-weight: 600; }
+.set-row input::placeholder { font-weight: 400; color: var(--muted); opacity: .8; }
+.set-row.done input { background: transparent; border-color: transparent; color: var(--ok); }
+.done-btn {
+  width: 52px; height: 44px; border-radius: 10px;
+  border: 2px solid var(--border); background: transparent; font-size: 20px; font-weight: 700;
+}
+.set-row.done .done-btn { background: var(--ok); border-color: var(--ok); color: #fff; }
+.del-btn { background: none; border: none; color: var(--muted); font-size: 22px; height: 44px; padding: 0 4px; }
+.card-actions { display: flex; justify-content: space-between; gap: 8px; margin-top: 10px; }
+.session-title { margin: 4px 2px 10px; }
+.session-title h2 { margin: 0; font-size: 20px; }
+
+/* ---------- history (per exercise) ---------- */
+details.card > summary { list-style: none; cursor: pointer; }
+details.card > summary::-webkit-details-marker { display: none; }
+.sum-main { display: flex; flex-direction: column; gap: 2px; }
+.sum-main strong { font-size: 16px; }
+.chev { float: right; color: var(--muted); display: inline-block; }
+details[open] .chev { transform: rotate(90deg); }
+table.mini { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 14px; }
+table.mini td { padding: 6px 0; border-top: 1px solid var(--border); vertical-align: middle; }
+table.mini td.date { color: var(--muted); white-space: nowrap; padding-right: 12px; }
+table.mini td.act { width: 32px; text-align: right; }
+table.mini .del-btn { height: 32px; font-size: 18px; }
+
+/* ---------- settings ---------- */
+.field { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 10px; }
+.field input { width: 90px; text-align: center; }
+.check { display: flex; align-items: center; gap: 10px; margin: 12px 0; }
+.lib-item { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-top: 1px solid var(--border); }
+.lib-group { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 12px 0 4px; }
+
+/* ---------- tab bar ---------- */
+nav.tabs {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
+  display: flex; background: var(--surface); border-top: 1px solid var(--border);
+  padding-bottom: var(--safe-bottom);
+}
+nav.tabs button {
+  flex: 1; background: none; border: none; height: var(--tabbar-h);
+  color: var(--muted); font-size: 14px;
+}
+nav.tabs button.active { color: var(--accent); font-weight: 650; }
+
+/* ---------- rest timer (fixed above the tab bar) ---------- */
+.timer {
+  position: fixed; left: 0; right: 0; z-index: 19;
+  bottom: calc(var(--tabbar-h) + var(--safe-bottom));
+  height: var(--timer-h);
+  background: var(--surface-2); border-top: 1px solid var(--border);
+  padding: 10px 16px;
+}
+.timer-inner { max-width: 640px; margin: 0 auto; }
+.timer-top { display: flex; justify-content: space-between; align-items: baseline; }
+#timer-label { color: var(--muted); font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#timer-time { font-size: 34px; font-weight: 750; font-variant-numeric: tabular-nums; }
+.timer-bar { height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; margin: 4px 0 8px; }
+#timer-fill { height: 100%; width: 100%; background: var(--accent); transition: width .25s linear; }
+.timer-btns { display: flex; gap: 8px; }
+.timer-btns .btn { flex: 1; min-height: 38px; padding: 4px; }
+.timer.finished { background: var(--ok); color: #fff; animation: pulse .5s ease-in-out 6 alternate; }
+.timer.finished #timer-label { color: #fff; }
+@keyframes pulse { from { opacity: 1; } to { opacity: .55; } }
+
+/* ---------- add-exercise dialog ---------- */
+dialog {
+  border: none; border-radius: 16px; padding: 0;
+  width: min(560px, calc(100vw - 24px));
+  margin: calc(12px + var(--safe-top)) auto auto;   /* stick to the top, so the keyboard doesn't cover it */
+  background: var(--surface); color: var(--text);
+}
+dialog::backdrop { background: rgba(0, 0, 0, .55); }
+.dlg { padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+.dlg-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.dlg-top h2 { margin: 0; }
+.dlg-fields { display: flex; gap: 16px; flex-wrap: wrap; }
+.dlg-fields label { display: flex; align-items: center; gap: 6px; color: var(--muted); }
+.pick-list { overflow-y: auto; max-height: 38vh; border: 1px solid var(--border); border-radius: 10px; }
+.pick-group {
+  position: sticky; top: 0; font-size: 12px; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--muted); padding: 8px 12px 4px; background: var(--surface-2);
+}
+.pick-item {
+  display: flex; justify-content: space-between; width: 100%; text-align: left;
+  background: none; border: none; border-top: 1px solid var(--border); padding: 12px;
+}
+.pick-item.new { color: var(--accent); font-weight: 600; }
+.pick-item.selected { background: var(--accent); color: #fff; }
+.tag { font-size: 12px; opacity: .75; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip { border: 1px solid var(--border); background: var(--surface-2); border-radius: 999px; padding: 6px 12px; font-size: 14px; }
+
+/* ---------- toast ---------- */
+#toast {
+  position: fixed; left: 50%; transform: translateX(-50%); z-index: 50;
+  top: calc(10px + var(--safe-top));
+  background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 999px;
+  font-size: 14px; box-shadow: 0 4px 16px rgba(0,0,0,.3); max-width: calc(100vw - 32px);
+}
+</style>
+</head>
+
+<body>
+<header class="app">
+  <h1>Gym Log</h1>
+  <span id="header-sub" class="sub"></span>
+</header>
+
+<main>
+  <!-- Each tab is a <section>; only one is visible at a time (see showView). -->
+  <section id="view-workout"></section>
+  <section id="view-plan" hidden></section>
+  <section id="view-history" hidden></section>
+  <section id="view-settings" hidden></section>
+</main>
+
+<!-- Rest timer -->
+<div id="timer" class="timer" hidden>
+  <div class="timer-inner">
+    <div class="timer-top">
+      <span id="timer-label">Rest</span>
+      <span id="timer-time">0:00</span>
+    </div>
+    <div class="timer-bar"><div id="timer-fill"></div></div>
+    <div class="timer-btns">
+      <button class="btn" data-action="rest-minus">−15 s</button>
+      <button class="btn" data-action="rest-plus">+15 s</button>
+      <button class="btn" data-action="rest-skip">Skip</button>
+    </div>
+  </div>
+</div>
+
+<nav class="tabs">
+  <button data-action="tab" data-view="workout" class="active">Workout</button>
+  <button data-action="tab" data-view="plan">Plan</button>
+  <button data-action="tab" data-view="history">History</button>
+  <button data-action="tab" data-view="settings">Settings</button>
+</nav>
+
+<!-- Add-exercise dialog. Used for two targets: the running workout, or a workout of the plan. -->
+<dialog id="dlg-add">
+  <div class="dlg">
+    <div class="dlg-top">
+      <h2 id="pick-title">Add exercise</h2>
+      <!-- autofocus on a button (not the search box) so the iPhone keyboard doesn't pop up over the list -->
+      <button class="btn small" data-action="pick-cancel" autofocus>Cancel</button>
+    </div>
+    <input id="pick-search" type="search" placeholder="Search, or type a new exercise" autocomplete="off" autocapitalize="words">
+    <div id="pick-list" class="pick-list"></div>
+    <div class="dlg-fields">
+      <label>Sets <input id="pick-sets" class="rest-input" inputmode="numeric" pattern="[0-9]*" autocomplete="off"></label>
+      <label>Rest <input id="pick-rest" class="rest-input" inputmode="numeric" pattern="[0-9]*" autocomplete="off"> s</label>
+    </div>
+    <div class="chips">
+      <button class="chip" data-action="pick-chip" data-sec="60">Rest 1:00</button>
+      <button class="chip" data-action="pick-chip" data-sec="90">1:30</button>
+      <button class="chip" data-action="pick-chip" data-sec="120">2:00</button>
+      <button class="chip" data-action="pick-chip" data-sec="180">3:00</button>
+    </div>
+    <button id="pick-ok" class="btn primary block" data-action="pick-confirm" disabled>Select an exercise</button>
+  </div>
+</dialog>
+
+<div id="toast" hidden></div>
+
+<script>
+'use strict';
+
+/* ==================================================================
+   1. CONSTANTS
+   ================================================================== */
+
+/** Key under which the whole database is stored in localStorage. */
+const STORAGE_KEY = 'gymlog.v1';
+
+/** Order of muscle groups in the exercise picker. Anything unknown is shown under "Custom". */
+const GROUPS = ['Chest', 'Back', 'Legs', 'Shoulders', 'Arms', 'Core', 'Custom'];
+
+/** Maximum number of workouts in the weekly plan. */
+const MAX_WORKOUTS = 7;
+
+/** Starter exercise library. Editable from Settings → Exercise library. */
+const PRESET_LIBRARY = [
+  { name: 'Bench Press', group: 'Chest' },
+  { name: 'Incline Dumbbell Press', group: 'Chest' },
+  { name: 'Chest Fly', group: 'Chest' },
+  { name: 'Dips', group: 'Chest' },
+  { name: 'Pull-up', group: 'Back' },
+  { name: 'Lat Pulldown', group: 'Back' },
+  { name: 'Barbell Row', group: 'Back' },
+  { name: 'Seated Cable Row', group: 'Back' },
+  { name: 'Deadlift', group: 'Back' },
+  { name: 'Squat', group: 'Legs' },
+  { name: 'Leg Press', group: 'Legs' },
+  { name: 'Romanian Deadlift', group: 'Legs' },
+  { name: 'Leg Extension', group: 'Legs' },
+  { name: 'Leg Curl', group: 'Legs' },
+  { name: 'Walking Lunge', group: 'Legs' },
+  { name: 'Calf Raise', group: 'Legs' },
+  { name: 'Overhead Press', group: 'Shoulders' },
+  { name: 'Lateral Raise', group: 'Shoulders' },
+  { name: 'Face Pull', group: 'Shoulders' },
+  { name: 'Barbell Curl', group: 'Arms' },
+  { name: 'Hammer Curl', group: 'Arms' },
+  { name: 'Triceps Pushdown', group: 'Arms' },
+  { name: 'Overhead Triceps Extension', group: 'Arms' },
+  { name: 'Hanging Leg Raise', group: 'Core' },
+  { name: 'Cable Crunch', group: 'Core' }
+];
+
+/* ==================================================================
+   2. SMALL HELPERS
+   ================================================================== */
+
+/** Shorthand for document.querySelector. */
+const $ = (selector) => document.querySelector(selector);
+
+/**
+ * Returns a short unique id for sets, exercises and workouts.
+ * Unique enough for local data; not meant to be cryptographically strong.
+ * @returns {string}
+ */
+function uid() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
+/**
+ * Escapes text before it is inserted into HTML, so an exercise called "<b>" can't break the page.
+ * @param {*} value
+ * @returns {string}
+ */
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (c) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+/**
+ * Parses a number typed by the user. Accepts "82,5" (Greek keyboard) as well as "82.5".
+ * @param {string} text
+ * @returns {number|null} the number, or null when empty / invalid / negative
+ */
+function parseNum(text) {
+  const t = String(text ?? '').trim().replace(',', '.');
+  if (t === '') return null;
+  const n = Number(t);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
+/**
+ * Formats a number without trailing zeros: 80 → "80", 82.5 → "82.5", null → "".
+ * @param {number|null} n
+ * @returns {string}
+ */
+function fmtNum(n) {
+  return n == null ? '' : String(Math.round(n * 100) / 100);
+}
+
+/**
+ * Formats one set as "80×8". No weight (or 0) is shown as bodyweight: "BW×12".
+ * @param {{kg:number|null, reps:number|null}} s
+ * @returns {string}
+ */
+function fmtSet(s) {
+  const kg = s.kg == null || s.kg === 0 ? 'BW' : fmtNum(s.kg);
+  return kg + '×' + fmtNum(s.reps);
+}
+
+/**
+ * Seconds → "m:ss" (e.g. 90 → "1:30").
+ * @param {number} sec
+ * @returns {string}
+ */
+function fmtClock(sec) {
+  sec = Math.max(0, Math.round(sec));
+  return Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0');
+}
+
+/**
+ * Date → "Wed 14 Oct 2026".
+ * @param {string|Date} d
+ * @returns {string}
+ */
+function fmtDate(d) {
+  return new Date(d).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+/**
+ * Date → "14 Oct".
+ * @param {string|Date} d
+ * @returns {string}
+ */
+function fmtShortDate(d) {
+  return new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+}
+
+/**
+ * Normalised key used to compare exercise names ("Bench press " equals "bench Press").
+ * @param {string} name
+ * @returns {string}
+ */
+function nameKey(name) {
+  return String(name ?? '').trim().toLowerCase();
+}
+
+/**
+ * Clamps a number to [min, max] and rounds it.
+ * @param {number} n
+ * @param {number} min
+ * @param {number} max
+ * @returns {number}
+ */
+function clampInt(n, min, max) {
+  return Math.min(max, Math.max(min, Math.round(n)));
+}
+
+/**
+ * Monday 00:00 (local time) of the week that contains `date`.
+ * JavaScript's getDay() counts Sunday = 0 … Saturday = 6; (day + 6) % 7 turns that into Monday = 0 … Sunday = 6.
+ * @param {Date} [date=new Date()]
+ * @returns {Date}
+ */
+function startOfWeek(date = new Date()) {
+  const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());   // today at 00:00
+  d.setDate(d.getDate() - (d.getDay() + 6) % 7);
+  return d;
+}
+
+/**
+ * Adds days with the calendar (not 24 h steps), so daylight-saving changes don't shift the result.
+ * @param {Date} date
+ * @param {number} days
+ * @returns {Date}
+ */
+function addDays(date, days) {
+  const d = new Date(date);
+  d.setDate(d.getDate() + days);
+  return d;
+}
+
+/** Handle for the toast's hide timeout. */
+let toastHandle = null;
+
+/**
+ * Shows a short message at the top of the screen for ~2.5 seconds.
+ * @param {string} message
+ */
+function toast(message) {
+  const el = $('#toast');
+  el.textContent = message;
+  el.hidden = false;
+  clearTimeout(toastHandle);
+  toastHandle = setTimeout(() => { el.hidden = true; }, 2500);
+}
+
+/* ==================================================================
+   3. DATA (one JSON document in localStorage)
+   ------------------------------------------------------------------
+   db = {
+     schema:   2,
+     settings: { defaultRestSec, defaultSets, autoRest, sound, keepAwake, lastExportAt },
+     library:  [ { name, group } ],
+     plan:     { workouts: [ { id, name, exercises: [ { id, name, sets, restSec } ] } ] },
+     active:   null | { id, workoutId, workoutName, startedAt,
+                        exercises: [ { id, name, restSec, sets: [ { id, kg, reps, hintReps, done, doneAt } ] } ] },
+     history:  [ { id, workoutId, workoutName, startedAt, finishedAt,
+                   exercises: [ { name, restSec, sets: [ { kg, reps } ] } ] } ]      // newest first
+     timer:    null | { endAt, totalSec, label }
+   }
+
+   Things that are NOT stored, but computed when needed (single source of truth):
+     - workouts per week      = plan.workouts.length
+     - ✓ done this week       = a history session of that workout dated this week
+     - "last time" / "best"   = searched in history
+   So nothing has to be "reset" on Monday: a new week simply has no sessions yet.
+   ================================================================== */
+
+/**
+ * Returns the default name for a new workout: the first free "Workout A", "Workout B", ...
+ * @param {Array} [workouts] existing plan workouts
+ * @returns {string}
+ */
+function defaultWorkoutName(workouts = db.plan.workouts) {
+  const used = new Set(workouts.map((w) => w.name));
+  for (let i = 0; i < 26; i++) {
+    const name = 'Workout ' + String.fromCharCode(65 + i);
+    if (!used.has(name)) return name;
+  }
+  return 'Workout';
+}
+
+/**
+ * Creates the default plan: 3 empty workouts (A, B, C).
+ * @returns {{workouts: Array}}
+ */
+function defaultPlan() {
+  const workouts = [];
+  for (let i = 0; i < 3; i++) workouts.push({ id: uid(), name: defaultWorkoutName(workouts), exercises: [] });
+  return { workouts };
+}
+
+/**
+ * Creates an empty database with default settings.
+ * @returns {object}
+ */
+function defaultDb() {
+  return {
+    schema: 2,
+    settings: {
+      defaultRestSec: 90,
+      defaultSets: 3,
+      autoRest: true,      // start the rest timer when a set is ticked ✓
+      sound: true,         // beep when rest is over
+      keepAwake: true,     // ask the phone to keep the screen on during a workout
+      lastExportAt: null
+    },
+    library: PRESET_LIBRARY.map((e) => ({ ...e })),
+    plan: defaultPlan(),
+    active: null,
+    history: [],
+    timer: null
+  };
+}
+
+/**
+ * Merges loaded/imported data over the defaults, so older files missing a key still work.
+ * (Data from the first version had no `plan`; it gets the default plan here.)
+ * @param {object} data
+ * @returns {object}
+ */
+function normaliseDb(data) {
+  const base = defaultDb();
+  const db = { ...base, ...data, settings: { ...base.settings, ...(data.settings || {}) } };
+  if (!Array.isArray(db.library)) db.library = base.library;
+  if (!Array.isArray(db.history)) db.history = [];
+  if (!db.plan || !Array.isArray(db.plan.workouts)) db.plan = base.plan;
+  db.schema = 2;
+  // History must stay newest-first: lastPerformance() and the week view rely on it.
+  db.history.sort((a, b) => String(b.finishedAt).localeCompare(String(a.finishedAt)));
+  return db;
+}
+
+/**
+ * Loads the database from localStorage.
+ * If the stored text is corrupt, it is copied aside (never silently overwritten) and we start fresh.
+ * @returns {object}
+ */
+function loadDb() {
+  let raw = null;
+  try {
+    raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? normaliseDb(JSON.parse(raw)) : defaultDb();
+  } catch (err) {
+    console.error('Could not read saved data', err);
+    try { if (raw) localStorage.setItem(STORAGE_KEY + '.corrupt.' + Date.now(), raw); } catch { /* ignore */ }
+    return defaultDb();
+  }
+}
+
+/** The in-memory database. Every change is followed by saveDb(). */
+let db = loadDb();
+
+/**
+ * Writes the whole database to localStorage.
+ * Called after every change, so nothing is lost if iOS closes the app in the background.
+ */
+function saveDb() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
+  } catch (err) {
+    console.error(err);
+    toast('⚠ Could not save — storage is full or blocked');
+  }
+}
+
+/**
+ * Finds the most recent finished session that contains this exercise.
+ * @param {string} name exercise name
+ * @returns {{date:string, restSec:number, sets:Array}|null}
+ */
+function lastPerformance(name) {
+  const key = nameKey(name);
+  for (const session of db.history) {                 // newest first, so the first hit is the latest
+    const ex = session.exercises.find((e) => nameKey(e.name) === key);
+    if (ex) return { date: session.finishedAt, restSec: ex.restSec, sets: ex.sets };
+  }
+  return null;
+}
+
+/**
+ * Finds an exercise of the running workout by id.
+ * @param {string} id
+ * @returns {object|null}
+ */
+function findActiveExercise(id) {
+  return db.active ? db.active.exercises.find((x) => x.id === id) || null : null;
+}
+
+/**
+ * Finds a workout of the plan by id.
+ * @param {string} id
+ * @returns {object|null}
+ */
+function findPlanWorkout(id) {
+  return db.plan.workouts.find((w) => w.id === id) || null;
+}
+
+/* ==================================================================
+   4. PLAN (workouts per week and their exercises)
+   Editing the plan never touches a workout that is already running:
+   starting a workout COPIES the plan's exercises into `db.active`.
+   ================================================================== */
+
+/**
+ * Adds (+1) or removes (−1, the last one) a workout from the plan.
+ * @param {number} delta +1 or −1
+ */
+function changeWorkoutCount(delta) {
+  const ws = db.plan.workouts;
+  if (delta > 0) {
+    if (ws.length >= MAX_WORKOUTS) { toast(`Maximum ${MAX_WORKOUTS} workouts per week`); return; }
+    ws.push({ id: uid(), name: defaultWorkoutName(), exercises: [] });
+  } else {
+    const last = ws[ws.length - 1];
+    if (!last) return;
+    if (last.exercises.length && !confirm(`Remove ${last.name} and its exercises from the plan? (History is kept.)`)) return;
+    ws.pop();
+  }
+  saveDb();
+  renderPlan();
+}
+
+/**
+ * Deletes one specific workout from the plan.
+ * @param {string} workoutId
+ */
+function removePlanWorkout(workoutId) {
+  const w = findPlanWorkout(workoutId);
+  if (!w || !confirm(`Delete ${w.name} from the plan? (History is kept.)`)) return;
+  db.plan.workouts = db.plan.workouts.filter((x) => x.id !== workoutId);
+  saveDb();
+  renderPlan();
+}
+
+/**
+ * Moves an exercise up (−1) or down (+1) inside a plan workout.
+ * @param {string} workoutId
+ * @param {string} planExId
+ * @param {number} dir −1 or +1
+ */
+function movePlanExercise(workoutId, planExId, dir) {
+  const w = findPlanWorkout(workoutId);
+  if (!w) return;
+  const i = w.exercises.findIndex((x) => x.id === planExId);
+  const j = i + dir;
+  if (i < 0 || j < 0 || j >= w.exercises.length) return;
+  [w.exercises[i], w.exercises[j]] = [w.exercises[j], w.exercises[i]];   // swap with destructuring
+  saveDb();
+  renderPlan();
+}
+
+/* ==================================================================
+   5. THIS WEEK (ticks and "next" workout)
+   ================================================================== */
+
+/**
+ * Returns the session in which this plan workout was finished this week (Mon–Sun), or null.
+ * @param {string} workoutId
+ * @returns {object|null}
+ */
+function doneThisWeek(workoutId) {
+  const from = startOfWeek();
+  const to = addDays(from, 7);
+  return db.history.find((s) => {
+    const t = new Date(s.finishedAt);
+    return s.workoutId === workoutId && t >= from && t < to;
+  }) || null;
+}
+
+/**
+ * Suggests the next workout: the first one not done this week,
+ * starting after the workout you did most recently (A → B → C → A …).
+ * @returns {string|null} workout id, or null when the week is complete
+ */
+function nextWorkoutId() {
+  const ws = db.plan.workouts;
+  if (!ws.length) return null;
+  const lastSession = db.history.find((s) => ws.some((w) => w.id === s.workoutId));
+  const start = lastSession ? (ws.findIndex((w) => w.id === lastSession.workoutId) + 1) % ws.length : 0;
+  for (let i = 0; i < ws.length; i++) {
+    const w = ws[(start + i) % ws.length];
+    if (!doneThisWeek(w.id)) return w.id;
+  }
+  return null;
+}
+
+/* ==================================================================
+   6. RUNNING A WORKOUT
+   ================================================================== */
+
+/**
+ * Creates one set row.
+ * kg is pre-filled (the weight usually stays the same); reps start empty,
+ * and last time's reps are kept as a grey hint (placeholder).
+ * @param {number|null} kg
+ * @param {number|null} hintReps
+ * @returns {object}
+ */
+function newSet(kg, hintReps) {
+  return { id: uid(), kg: kg ?? null, reps: null, hintReps: hintReps ?? null, done: false, doneAt: null };
+}
+
+/**
+ * Creates `count` sets for an exercise, pre-filled from the last time it was done.
+ * If last time had fewer sets, the extra ones copy the last set.
+ * @param {string} name
+ * @param {number} count
+ * @returns {Array}
+ */
+function buildSets(name, count) {
+  const last = lastPerformance(name);
+  return Array.from({ length: count }, (_, i) => {
+    const ref = last ? (last.sets[i] || last.sets[last.sets.length - 1]) : null;
+    return newSet(ref ? ref.kg : null, ref ? ref.reps : null);
+  });
+}
+
+/**
+ * Starts a workout.
+ * @param {string|null} workoutId a plan workout, or null for a free (unplanned) workout
+ */
+function startWorkout(workoutId) {
+  if (db.active) { toast('Finish or discard the current workout first'); return; }
+  const tpl = workoutId ? findPlanWorkout(workoutId) : null;
+
+  db.active = {
+    id: uid(),
+    workoutId: tpl ? tpl.id : null,
+    workoutName: tpl ? tpl.name : 'Free workout',
+    startedAt: new Date().toISOString(),
+    // Copy of the plan: changes during this workout don't change the plan, and vice versa.
+    exercises: tpl
+      ? tpl.exercises.map((pe) => ({ id: uid(), name: pe.name, restSec: pe.restSec, sets: buildSets(pe.name, pe.sets) }))
+      : []
+  };
+  saveDb();
+  renderWorkout();
+  updateWakeLock();
+  window.scrollTo(0, 0);
+  if (!db.active.exercises.length) openAddDialog({ kind: 'session' });
+}
+
+/**
+ * Adds an exercise to the running workout (today only — the plan is not changed).
+ * @param {string} name
+ * @param {number} restSec
+ * @param {number} setCount
+ */
+function addExerciseToWorkout(name, restSec, setCount) {
+  const ex = { id: uid(), name, restSec, sets: buildSets(name, setCount) };
+  db.active.exercises.push(ex);
+  saveDb();
+  renderWorkout();
+  document.getElementById('ex-' + ex.id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+/**
+ * Appends a set, copying the previous set's kg (and its reps as the hint).
+ * @param {object} ex
+ */
+function addSet(ex) {
+  const prev = ex.sets[ex.sets.length - 1];
+  ex.sets.push(newSet(prev ? prev.kg : null, prev ? (prev.reps ?? prev.hintReps) : null));
+  saveDb();
+  renderWorkout();
+}
+
+/**
+ * Ticks (or un-ticks) a set.
+ * Ticking: if reps are empty, last time's reps (the grey hint) are used.
+ * If "auto rest" is on, the rest timer starts with this exercise's rest time.
+ * @param {object} ex
+ * @param {string} setId
+ */
+function toggleSetDone(ex, setId) {
+  const set = ex?.sets.find((s) => s.id === setId);
+  if (!set) return;
+
+  if (set.done) {                                     // un-tick → editable again
+    set.done = false;
+    set.doneAt = null;
+    saveDb();
+    renderWorkout();
+    return;
+  }
+
+  if (set.reps == null) set.reps = set.hintReps;      // one-tap "same as last time"
+  if (set.reps == null || set.reps <= 0) {
+    toast('Enter the reps first');
+    document.querySelector(`input[data-set="${set.id}"][data-field="reps"]`)?.focus();
+    return;
+  }
+
+  set.done = true;
+  set.doneAt = new Date().toISOString();
+  saveDb();
+  renderWorkout();
+  if (db.settings.autoRest) startRest(ex.restSec, ex.name);
+}
+
+/**
+ * Finishes the workout: keeps only ticked sets and saves it.
+ * A plan workout saved this week shows a ✓ in the week view.
+ */
+function finishWorkout() {
+  const w = db.active;
+  if (!w) return;
+
+  const exercises = w.exercises
+    .map((ex) => ({
+      name: ex.name,
+      restSec: ex.restSec,
+      sets: ex.sets.filter((s) => s.done).map((s) => ({ kg: s.kg, reps: s.reps }))
+    }))
+    .filter((ex) => ex.sets.length > 0);
+
+  if (exercises.length === 0) {
+    if (confirm('No sets are ticked ✓. Discard this workout?')) discardWorkout(true);
+    return;
+  }
+  const unticked = w.exercises.reduce((n, ex) => n + ex.sets.filter((s) => !s.done).length, 0);
+  const msg = unticked
+    ? `Finish workout? ${unticked} unticked set(s) will not be saved.`
+    : 'Finish workout and save it?';
+  if (!confirm(msg)) return;
+
+  db.history.unshift({
+    id: w.id,
+    workoutId: w.workoutId,
+    workoutName: w.workoutName,
+    startedAt: w.startedAt,
+    finishedAt: new Date().toISOString(),
+    exercises
+  });
+  db.active = null;
+  stopRest();
+  saveDb();
+  updateWakeLock();
+  renderAll();
+  showView('workout');
+
+  if (w.workoutId) {
+    const left = db.plan.workouts.filter((x) => !doneThisWeek(x.id)).length;
+    toast(left ? `${w.workoutName} ✓ — ${left} left this week` : 'Week complete 🎉');
+  } else {
+    toast('Workout saved 💪');
+  }
+}
+
+/**
+ * Throws away the running workout.
+ * @param {boolean} [skipConfirm=false]
+ */
+function discardWorkout(skipConfirm = false) {
+  if (!skipConfirm && !confirm('Discard this workout? Nothing from it will be saved.')) return;
+  db.active = null;
+  stopRest();
+  saveDb();
+  updateWakeLock();
+  renderWorkout();
+}
+
+/* ==================================================================
+   7. REST TIMER
+   ------------------------------------------------------------------
+   We store the END timestamp (endAt) and compute "remaining = endAt - now"
+   on every tick, instead of decreasing a counter. iOS pauses JavaScript
+   while the app is in the background / the screen is locked; with a
+   timestamp the timer is still correct the moment you come back.
+   ================================================================== */
+
+/** setInterval handle of the running timer. */
+let tickHandle = null;
+/** Web Audio context, created on the first tap (iOS only allows audio after a user gesture). */
+let audioCtx = null;
+
+/**
+ * Creates/resumes the audio context. Must run inside a tap handler on iOS.
+ */
+function unlockAudio() {
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state !== 'running') audioCtx.resume().catch(() => {});
+  } catch { /* no audio available — the visual alert still works */ }
+}
+
+/**
+ * Plays short beeps with an oscillator (no sound file needed).
+ * @param {number} [times=3]
+ */
+function beep(times = 3) {
+  if (!audioCtx) return;
+  const t0 = audioCtx.currentTime + 0.05;
+  for (let i = 0; i < times; i++) {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    const start = t0 + i * 0.35;
+    osc.type = 'sine';
+    osc.frequency.value = 880;                         // A5 — easy to hear in a noisy gym
+    gain.gain.setValueAtTime(0.0001, start);           // short fade in/out avoids clicks
+    gain.gain.exponentialRampToValueAtTime(0.6, start + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.25);
+    osc.connect(gain).connect(audioCtx.destination);
+    osc.start(start);
+    osc.stop(start + 0.27);
+  }
+}
+
+/**
+ * Starts (or restarts) the rest timer.
+ * @param {number} sec rest length in seconds
+ * @param {string} label text shown on the timer (exercise name)
+ */
+function startRest(sec, label) {
+  if (!sec || sec <= 0) return;
+  unlockAudio();
+  db.timer = { endAt: Date.now() + sec * 1000, totalSec: sec, label };
+  saveDb();
+  runTimer();
+}
+
+/** Shows the timer bar and starts ticking. */
+function runTimer() {
+  clearInterval(tickHandle);
+  $('#timer').classList.remove('finished');
+  $('#timer').hidden = false;
+  document.body.classList.add('timer-on');
+  tick();
+  tickHandle = setInterval(tick, 250);
+}
+
+/** Updates the display from the stored end time; fires restFinished() at zero. */
+function tick() {
+  const t = db.timer;
+  if (!t) return;
+  const remaining = (t.endAt - Date.now()) / 1000;
+  if (remaining <= 0) { restFinished(); return; }
+  $('#timer-label').textContent = 'Rest · ' + t.label;
+  $('#timer-time').textContent = fmtClock(Math.ceil(remaining));
+  $('#timer-fill').style.width = Math.min(100, (100 * remaining) / t.totalSec) + '%';
+}
+
+/**
+ * Adds or removes seconds from the running timer.
+ * @param {number} deltaSec
+ */
+function adjustRest(deltaSec) {
+  if (!db.timer) return;
+  db.timer.endAt += deltaSec * 1000;
+  db.timer.totalSec = Math.max(1, db.timer.totalSec + deltaSec);
+  saveDb();
+  tick();
+}
+
+/** Called when the timer reaches zero: alert, then hide after a few seconds. */
+function restFinished() {
+  clearInterval(tickHandle);
+  tickHandle = null;
+  // Only alert if it ended just now (not e.g. an hour ago while the app was closed).
+  const justNow = db.timer && Date.now() - db.timer.endAt < 10000;
+  db.timer = null;
+  saveDb();
+  if (!justNow) { hideTimer(); return; }
+
+  $('#timer-label').textContent = 'Rest over';
+  $('#timer-time').textContent = 'GO!';
+  $('#timer-fill').style.width = '0%';
+  $('#timer').classList.add('finished');
+  if (db.settings.sound) beep(3);
+  if (navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 200]);   // Android only; iPhone ignores it
+  setTimeout(() => { if (!db.timer) hideTimer(); }, 4000);              // don't hide a timer restarted meanwhile
+}
+
+/** Stops the timer without alerting (Skip button, finish/discard workout). */
+function stopRest() {
+  clearInterval(tickHandle);
+  tickHandle = null;
+  db.timer = null;
+  saveDb();
+  hideTimer();
+}
+
+/** Hides the timer bar. */
+function hideTimer() {
+  $('#timer').hidden = true;
+  $('#timer').classList.remove('finished');
+  document.body.classList.remove('timer-on');
+}
+
+/* ==================================================================
+   8. KEEP SCREEN ON (Screen Wake Lock API)
+   Supported by recent Safari versions; wrapped in try/catch because
+   support in home-screen apps has varied between iOS versions.
+   ================================================================== */
+
+/** Current wake lock, or null. */
+let wakeLock = null;
+/** True while a request is in flight, so quick taps don't send overlapping requests. */
+let wakeLockPending = false;
+/** Log the "not available" warning only once. */
+let wakeLockWarned = false;
+
+/** Requests or releases the wake lock depending on settings and whether a workout is running. */
+async function updateWakeLock() {
+  const want = db.settings.keepAwake && !!db.active && document.visibilityState === 'visible';
+  if (wakeLockPending) return;
+  wakeLockPending = true;
+  try {
+    if (want && !wakeLock && 'wakeLock' in navigator) {
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', () => { wakeLock = null; });
+    } else if (!want && wakeLock) {
+      await wakeLock.release();
+      wakeLock = null;
+    }
+  } catch (err) {
+    if (!wakeLockWarned) console.warn('Wake lock not available', err);
+    wakeLockWarned = true;
+  } finally {
+    wakeLockPending = false;
+  }
+}
+
+/* ==================================================================
+   9. RENDERING
+   Each view is rebuilt from `db` with a template string.
+   Typing in an input does NOT re-render (that would steal focus);
+   only structural changes (tick, add/remove...) re-render.
+   ================================================================== */
+
+/** Re-renders every view. */
+function renderAll() {
+  renderWorkout();
+  renderPlan();
+  renderHistory();
+  renderSettings();
+}
+
+/** Renders the Workout tab: the running workout, or this week's plan when nothing is running. */
+function renderWorkout() {
+  if (db.active) renderSession();
+  else renderWeek();
+}
+
+/** Week view: one card per plan workout, ✓ when done this week, "Next" badge on the suggested one. */
+function renderWeek() {
+  const root = $('#view-workout');
+  const ws = db.plan.workouts;
+  const weekStart = startOfWeek();
+  const doneCount = ws.filter((w) => doneThisWeek(w.id)).length;
+  const nextId = nextWorkoutId();
+  $('#header-sub').textContent = '';
+
+  const cards = ws.map((w, i) => {
+    const done = doneThisWeek(w.id);
+    const isNext = w.id === nextId;
+    const names = w.exercises.map((e) => escapeHtml(e.name)).join(' · ');
+    const status = done ? `Done ${escapeHtml(fmtDate(done.finishedAt))}` : `${w.exercises.length} exercise(s)`;
+    const button = !w.exercises.length
+      ? `<button class="btn block mt" data-action="tab" data-view="plan">Add exercises in Plan</button>`
+      : `<button class="btn ${isNext ? 'primary' : ''} block mt" data-action="start-workout" data-wid="${w.id}">
+           ${done ? 'Do it again' : 'Start'}</button>`;
+    return `
+      <div class="card wk ${done ? 'done' : ''}">
+        <div class="wk-top">
+          <span class="tick">${done ? '✓' : i + 1}</span>
+          <div class="grow">
+            <div class="wk-title">${escapeHtml(w.name)}${isNext ? '<span class="badge">Next</span>' : ''}</div>
+            <div class="muted small">${status}</div>
+          </div>
+        </div>
+        <div class="muted small wk-ex">${names || 'No exercises yet'}</div>
+        ${button}
+      </div>`;
+  }).join('');
+
+  root.innerHTML = `
+    <div class="week-head">
+      <div>
+        <h2>This week</h2>
+        <span class="muted small">${fmtShortDate(weekStart)} – ${fmtShortDate(addDays(weekStart, 6))}</span>
+      </div>
+      ${ws.length ? `<span class="pill">${doneCount} / ${ws.length} done</span>` : ''}
+    </div>
+    ${ws.length && doneCount === ws.length ? '<div class="card center">Week complete 🎉</div>' : ''}
+    ${cards || `<div class="card">
+        <p class="muted">No workouts in your plan yet.</p>
+        <button class="btn primary block" data-action="tab" data-view="plan">Set up your plan</button>
+      </div>`}
+    <button class="btn block" data-action="start-free">Free workout (not in plan)</button>`;
+}
+
+/** Running workout: one card per exercise. */
+function renderSession() {
+  const w = db.active;
+  $('#view-workout').innerHTML = `
+    <div class="session-title"><h2>${escapeHtml(w.workoutName)}</h2></div>
+    ${w.exercises.map(exerciseCardHtml).join('') || '<p class="muted center">Add your first exercise.</p>'}
+    <button class="btn block" data-action="add-exercise">+ Add exercise${w.workoutId ? ' (today only)' : ''}</button>
+    <div class="row mt">
+      <button class="btn primary grow" data-action="finish-workout">Finish workout</button>
+      <button class="btn danger" data-action="discard-workout">Discard</button>
+    </div>`;
+  $('#header-sub').textContent =
+    'Started ' + new Date(w.startedAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+}
+
+/**
+ * HTML for one exercise card in the running workout.
+ * @param {object} ex
+ * @returns {string}
+ */
+function exerciseCardHtml(ex) {
+  const last = lastPerformance(ex.name);
+  const lastText = last
+    ? `Last (${fmtDate(last.date)}): ${last.sets.map(fmtSet).join(' · ')}`
+    : 'First time — no previous data';
+
+  const rows = ex.sets.map((s, i) => `
+    <div class="set-grid set-row ${s.done ? 'done' : ''}">
+      <span class="num">${i + 1}</span>
+      <input aria-label="Set ${i + 1} kg" inputmode="decimal" autocomplete="off" placeholder="kg"
+             value="${escapeHtml(fmtNum(s.kg))}" data-ex="${ex.id}" data-set="${s.id}" data-field="kg"
+             ${s.done ? 'readonly' : ''}>
+      <span class="x">×</span>
+      <input aria-label="Set ${i + 1} reps" inputmode="numeric" pattern="[0-9]*" autocomplete="off"
+             placeholder="${s.hintReps != null ? escapeHtml(fmtNum(s.hintReps)) : 'reps'}"
+             value="${escapeHtml(fmtNum(s.reps))}" data-ex="${ex.id}" data-set="${s.id}" data-field="reps"
+             ${s.done ? 'readonly' : ''}>
+      <button class="done-btn" data-action="toggle-done" data-ex="${ex.id}" data-set="${s.id}"
+              aria-label="${s.done ? 'Undo set' : 'Set done'}">✓</button>
+      ${s.done
+        ? '<span></span>'
+        : `<button class="del-btn" data-action="remove-set" data-ex="${ex.id}" data-set="${s.id}" aria-label="Remove set">×</button>`}
+    </div>`).join('');
+
+  return `
+    <div class="card" id="ex-${ex.id}">
+      <h2 class="ex-name">${escapeHtml(ex.name)}</h2>
+      <div class="ex-last">${escapeHtml(lastText)}</div>
+      <div class="rest-line">
+        <label>Rest
+          <input class="rest-input" inputmode="numeric" pattern="[0-9]*" autocomplete="off"
+                 value="${ex.restSec}" data-ex="${ex.id}" data-field="rest"> s
+        </label>
+        <button class="btn small" data-action="start-rest" data-ex="${ex.id}">⏱ Start rest</button>
+      </div>
+      <div class="set-grid sets-head"><span>#</span><span>kg</span><span></span><span>reps</span><span>done</span><span></span></div>
+      ${rows}
+      <div class="card-actions">
+        <button class="btn small" data-action="add-set" data-ex="${ex.id}">+ Set</button>
+        <button class="btn small danger" data-action="remove-exercise" data-ex="${ex.id}">Remove exercise</button>
+      </div>
+    </div>`;
+}
+
+/** Renders the Plan tab: number of workouts per week, and the exercises of each workout. */
+function renderPlan() {
+  const ws = db.plan.workouts;
+
+  const cards = ws.map((w) => {
+    const rows = w.exercises.map((pe, i) => `
+      <div class="plan-ex">
+        <div class="plan-ex-top">
+          <span class="plan-ex-name">${i + 1}. ${escapeHtml(pe.name)}</span>
+          <span class="row">
+            <button class="icon-btn" data-action="plan-move" data-wid="${w.id}" data-peid="${pe.id}" data-dir="-1"
+                    aria-label="Move up" ${i === 0 ? 'disabled' : ''}>↑</button>
+            <button class="icon-btn" data-action="plan-move" data-wid="${w.id}" data-peid="${pe.id}" data-dir="1"
+                    aria-label="Move down" ${i === w.exercises.length - 1 ? 'disabled' : ''}>↓</button>
+            <button class="icon-btn" data-action="plan-remove-ex" data-wid="${w.id}" data-peid="${pe.id}"
+                    aria-label="Remove ${escapeHtml(pe.name)}">×</button>
+          </span>
+        </div>
+        <div class="plan-ex-fields">
+          <label>Sets <input inputmode="numeric" pattern="[0-9]*" autocomplete="off" value="${pe.sets}"
+                 data-plan-workout="${w.id}" data-plan-ex="${pe.id}" data-plan-field="sets"></label>
+          <label>Rest <input inputmode="numeric" pattern="[0-9]*" autocomplete="off" value="${pe.restSec}"
+                 data-plan-workout="${w.id}" data-plan-ex="${pe.id}" data-plan-field="restSec"> s</label>
+        </div>
+      </div>`).join('');
+
+    return `
+      <div class="card">
+        <div class="row">
+          <input class="wk-name grow" value="${escapeHtml(w.name)}" autocomplete="off" aria-label="Workout name"
+                 data-plan-workout="${w.id}" data-plan-field="name">
+          <button class="btn small danger" data-action="plan-remove-workout" data-wid="${w.id}">Delete</button>
+        </div>
+        ${rows || '<p class="muted small">No exercises yet.</p>'}
+        <button class="btn small mt" data-action="plan-add-ex" data-wid="${w.id}">+ Add exercise</button>
+      </div>`;
+  }).join('');
+
+  $('#view-plan').innerHTML = `
+    <div class="card">
+      <div class="row between">
+        <div class="grow">
+          <h2 style="margin:0">Workouts per week</h2>
+          <div class="muted small">Each workout keeps its exercises until you change them here.</div>
+        </div>
+        <div class="stepper">
+          <button data-action="plan-count" data-delta="-1" aria-label="Fewer workouts" ${ws.length === 0 ? 'disabled' : ''}>−</button>
+          <span>${ws.length}</span>
+          <button data-action="plan-count" data-delta="1" aria-label="More workouts" ${ws.length >= MAX_WORKOUTS ? 'disabled' : ''}>+</button>
+        </div>
+      </div>
+      ${db.active ? '<p class="muted small" style="margin-bottom:0">Changes apply from the next workout; the one running now is not affected.</p>' : ''}
+    </div>
+    ${cards}`;
+}
+
+/** Text typed in the History search box (kept between renders). */
+let historyFilter = '';
+
+/** Renders the History tab shell (search box + list). */
+function renderHistory() {
+  $('#view-history').innerHTML = `
+    <input id="hist-search" type="search" placeholder="Search exercise" autocomplete="off"
+           value="${escapeHtml(historyFilter)}">
+    <div id="hist-list" class="mt"></div>`;
+  renderHistoryList();
+}
+
+/**
+ * Best set of a list: heaviest kg, and on equal kg the most reps.
+ * @param {Array<{kg:number|null, reps:number|null}>} sets
+ * @returns {object|null}
+ */
+function bestSet(sets) {
+  let best = null;
+  for (const s of sets) {
+    const kg = s.kg || 0, reps = s.reps || 0;
+    if (!best || kg > (best.kg || 0) || (kg === (best.kg || 0) && reps > (best.reps || 0))) best = s;
+  }
+  return best;
+}
+
+/**
+ * Renders the history list, grouped per exercise (most recently trained first).
+ * Expanded cards stay expanded after a re-render (e.g. after deleting an entry).
+ */
+function renderHistoryList() {
+  const list = $('#hist-list');
+  if (!list) return;
+  const open = new Set([...list.querySelectorAll('details[open]')].map((d) => d.dataset.key));
+
+  // Group: exercise key → { name, entries: [{ session, exIdx, sets }] }, entries newest first.
+  const map = new Map();
+  for (const session of db.history) {
+    session.exercises.forEach((e, exIdx) => {
+      const key = nameKey(e.name);
+      if (!map.has(key)) map.set(key, { key, name: e.name, entries: [] });
+      map.get(key).entries.push({ session, exIdx, sets: e.sets });
+    });
+  }
+  if (!map.size) {
+    list.innerHTML = '<div class="card muted">Finish a workout to see your history here.</div>';
+    return;
+  }
+
+  const q = nameKey(historyFilter);
+  const groups = [...map.values()].filter((g) => !q || g.key.includes(q));
+  // Map keeps insertion order, and history is newest-first, so groups are already "most recent first".
+
+  list.innerHTML = groups.map((g) => {
+    const last = g.entries[0];
+    const best = bestSet(g.entries.flatMap((en) => en.sets.map((s) => ({ ...s, date: en.session.finishedAt }))));
+    const rows = g.entries.map((en) => {
+      const plan = findPlanWorkout(en.session.workoutId);
+      const wName = plan ? plan.name : (en.session.workoutName || '');
+      return `
+        <tr>
+          <td class="date">${escapeHtml(fmtDate(en.session.finishedAt))}<br><span class="small">${escapeHtml(wName)}</span></td>
+          <td>${en.sets.map(fmtSet).join(' · ')}</td>
+          <td class="act"><button class="del-btn" data-action="delete-entry" data-session="${escapeHtml(en.session.id)}"
+              data-exidx="${en.exIdx}" aria-label="Delete this entry">×</button></td>
+        </tr>`;
+    }).join('');
+
+    return `
+      <details class="card" data-key="${escapeHtml(g.key)}" ${open.has(g.key) ? 'open' : ''}>
+        <summary class="sum-main">
+          <strong>${escapeHtml(g.name)} <span class="chev">›</span></strong>
+          <span class="small">Last: ${last.sets.map(fmtSet).join(' · ')}
+            <span class="muted">(${escapeHtml(fmtDate(last.session.finishedAt))})</span></span>
+          <span class="small">Best: ${fmtSet(best)}
+            <span class="muted">(${escapeHtml(fmtDate(best.date))}) · ${g.entries.length} session(s)</span></span>
+        </summary>
+        <table class="mini">${rows}</table>
+      </details>`;
+  }).join('') || '<p class="muted center">No exercise matches.</p>';
+}
+
+/**
+ * Deletes one exercise entry from a past session. If the session becomes empty it is removed,
+ * which also removes that workout's ✓ for its week.
+ * @param {string} sessionId
+ * @param {number} exIdx index of the exercise inside the session
+ */
+function deleteHistoryEntry(sessionId, exIdx) {
+  const s = db.history.find((x) => x.id === sessionId);
+  const e = s?.exercises[exIdx];
+  if (!e) return;
+  const lastOne = s.exercises.length === 1;
+  const msg = `Delete ${e.name} on ${fmtDate(s.finishedAt)}?` +
+    (lastOne && s.workoutId ? `\nIt is the only exercise of that ${s.workoutName}, so its ✓ for that week goes too.` : '');
+  if (!confirm(msg)) return;
+  s.exercises.splice(exIdx, 1);
+  if (!s.exercises.length) db.history = db.history.filter((x) => x !== s);
+  saveDb();
+  renderHistoryList();
+}
+
+/** Renders the Settings tab. */
+function renderSettings() {
+  const s = db.settings;
+
+  const libHtml = GROUPS.map((g) => {
+    const items = db.library
+      .map((e, idx) => ({ ...e, idx }))
+      .filter((e) => (GROUPS.includes(e.group) ? e.group : 'Custom') === g)
+      .sort((a, b) => a.name.localeCompare(b.name));
+    if (!items.length) return '';
+    return `<div class="lib-group">${g}</div>` + items.map((e) => `
+      <div class="lib-item">
+        <span>${escapeHtml(e.name)}</span>
+        <button class="del-btn" data-action="lib-remove" data-idx="${e.idx}" aria-label="Remove ${escapeHtml(e.name)}">×</button>
+      </div>`).join('');
+  }).join('');
+
+  $('#view-settings').innerHTML = `
+    <div class="card">
+      <h2>Defaults</h2>
+      <label class="field">Default rest (seconds)
+        <input data-setting="defaultRestSec" inputmode="numeric" pattern="[0-9]*" value="${s.defaultRestSec}">
+      </label>
+      <label class="field">Default sets per exercise
+        <input data-setting="defaultSets" inputmode="numeric" pattern="[0-9]*" value="${s.defaultSets}">
+      </label>
+      <label class="check"><input type="checkbox" data-setting="autoRest" ${s.autoRest ? 'checked' : ''}>
+        Start the rest timer when I tick a set ✓</label>
+      <label class="check"><input type="checkbox" data-setting="sound" ${s.sound ? 'checked' : ''}>
+        Beep when rest is over</label>
+      <label class="check"><input type="checkbox" data-setting="keepAwake" ${s.keepAwake ? 'checked' : ''}>
+        Keep the screen on during a workout</label>
+    </div>
+
+    <div class="card">
+      <h2>Exercise library</h2>
+      <div class="row">
+        <input id="lib-name" placeholder="New exercise" autocomplete="off" autocapitalize="words">
+        <select id="lib-group" style="width:auto">${GROUPS.map((g) => `<option ${g === 'Custom' ? 'selected' : ''}>${g}</option>`).join('')}</select>
+      </div>
+      <button class="btn small mt" data-action="lib-add">Add to library</button>
+      ${libHtml}
+    </div>
+
+    <div class="card">
+      <h2>Backup</h2>
+      <p class="muted small">Your data is stored only on this phone. Export a backup regularly
+        (save it to Files / OneDrive / email).<br>
+        Last export: ${s.lastExportAt ? escapeHtml(fmtDate(s.lastExportAt)) : 'never'}</p>
+      <div class="row wrap">
+        <button class="btn small" data-action="export-json">Export backup (JSON)</button>
+        <button class="btn small" data-action="export-csv">Export CSV</button>
+        <!-- A <label> for a hidden file input is the most reliable way to open the file picker on iOS -->
+        <label class="btn small" for="import-file">Import backup</label>
+        <input type="file" id="import-file" accept=".json,application/json" hidden>
+      </div>
+    </div>
+
+    <div class="card">
+      <button class="btn danger block" data-action="reset-all">Delete all data</button>
+    </div>`;
+}
+
+/** Names of the tabs, in tab-bar order. */
+const VIEWS = ['workout', 'plan', 'history', 'settings'];
+
+/**
+ * Shows one tab and hides the others.
+ * @param {'workout'|'plan'|'history'|'settings'} name
+ */
+function showView(name) {
+  for (const v of VIEWS) {
+    $('#view-' + v).hidden = v !== name;
+    document.querySelector(`nav.tabs [data-view="${v}"]`).classList.toggle('active', v === name);
+  }
+  if (name === 'workout') renderWorkout();
+  if (name === 'plan') renderPlan();
+  if (name === 'history') renderHistory();
+  if (name === 'settings') renderSettings();
+  window.scrollTo(0, 0);
+}
+
+/* ==================================================================
+   10. ADD-EXERCISE DIALOG
+   `pick.target` says where the chosen exercise goes:
+     { kind: 'session' }                 → the running workout (today only)
+     { kind: 'plan', workoutId: '...' }  → a workout of the plan (permanent)
+   ================================================================== */
+
+/** Picker state. */
+const pick = { target: null, selected: null, visible: [] };
+
+/**
+ * Exercise names already in the target (shown with an "already added" tag).
+ * @returns {Set<string>}
+ */
+function pickTargetNames() {
+  const list = pick.target?.kind === 'plan'
+    ? findPlanWorkout(pick.target.workoutId)?.exercises || []
+    : db.active?.exercises || [];
+  return new Set(list.map((e) => nameKey(e.name)));
+}
+
+/**
+ * Opens the picker.
+ * @param {{kind:'session'}|{kind:'plan', workoutId:string}} target
+ */
+function openAddDialog(target) {
+  if (target.kind === 'session' && !db.active) return;
+  pick.target = target;
+  pick.selected = null;
+  const w = target.kind === 'plan' ? findPlanWorkout(target.workoutId) : null;
+  $('#pick-title').textContent = w ? `Add to ${w.name}`
+    : (db.active?.workoutId ? 'Add exercise (today only)' : 'Add exercise');
+  $('#pick-search').value = '';
+  $('#pick-rest').value = db.settings.defaultRestSec;
+  $('#pick-sets').value = db.settings.defaultSets;
+  renderPickList();
+  $('#dlg-add').showModal();
+}
+
+/** Rebuilds the list from the search text. Also offers "Create …" for a new name. */
+function renderPickList() {
+  const typed = $('#pick-search').value.trim();
+  const q = nameKey(typed);
+  const already = pickTargetNames();
+  pick.visible = db.library.filter((e) => !q || nameKey(e.name).includes(q));
+
+  let html = '';
+  for (const g of GROUPS) {
+    const items = pick.visible.filter((e) => (GROUPS.includes(e.group) ? e.group : 'Custom') === g);
+    if (!items.length) continue;
+    html += `<div class="pick-group">${g}</div>`;
+    html += items.map((e) => {
+      const sel = pick.selected && nameKey(pick.selected) === nameKey(e.name) ? 'selected' : '';
+      const tag = already.has(nameKey(e.name)) ? '<span class="tag">already added</span>' : '';
+      return `<button class="pick-item ${sel}" data-action="pick-select" data-idx="${pick.visible.indexOf(e)}">
+                <span>${escapeHtml(e.name)}</span>${tag}</button>`;
+    }).join('');
+  }
+  // Offer "Create …" (after the matches) when the typed name is not already in the library.
+  const exact = db.library.some((e) => nameKey(e.name) === q);
+  if (typed && !exact) {
+    const sel = pick.selected && nameKey(pick.selected) === q ? 'selected' : '';
+    html += `<button class="pick-item new ${sel}" data-action="pick-new">+ Create “${escapeHtml(typed)}”</button>`;
+  }
+
+  const list = $('#pick-list');
+  const scroll = list.scrollTop;                      // keep the scroll position when re-rendering
+  list.innerHTML = html || '<p class="muted center">No matches</p>';
+  list.scrollTop = scroll;
+
+  const ok = $('#pick-ok');
+  ok.disabled = !pick.selected;
+  ok.textContent = pick.selected ? `Add ${pick.selected}` : 'Select an exercise';
+}
+
+/**
+ * Selects an exercise and pre-fills sets/rest from the last time it was done.
+ * @param {string} name
+ */
+function selectPick(name) {
+  pick.selected = name;
+  const last = lastPerformance(name);
+  $('#pick-rest').value = last?.restSec ?? db.settings.defaultRestSec;
+  $('#pick-sets').value = last?.sets.length ?? db.settings.defaultSets;
+  renderPickList();
+}
+
+/** Adds the selected exercise to its target (and to the library if it is new). */
+function confirmPick() {
+  const name = pick.selected?.trim();
+  if (!name) return;
+  if (!db.library.some((e) => nameKey(e.name) === nameKey(name))) {
+    db.library.push({ name, group: 'Custom' });
+  }
+  const restIn = parseNum($('#pick-rest').value);
+  const setsIn = parseNum($('#pick-sets').value);
+  const restSec = restIn == null ? db.settings.defaultRestSec : clampInt(restIn, 0, 3600);
+  const sets = setsIn == null ? db.settings.defaultSets : clampInt(setsIn, 1, 10);
+  $('#dlg-add').close();
+
+  if (pick.target.kind === 'plan') {
+    const w = findPlanWorkout(pick.target.workoutId);
+    if (!w) return;
+    w.exercises.push({ id: uid(), name, sets, restSec });
+    saveDb();
+    renderPlan();
+    toast(`${name} added to ${w.name}`);
+  } else {
+    addExerciseToWorkout(name, restSec, sets);
+  }
+}
+
+/* ==================================================================
+   11. EXPORT / IMPORT
+   ================================================================== */
+
+/**
+ * Hands a file to the user. On iPhone the Share sheet (Save to Files, OneDrive, Mail…)
+ * is the reliable path; a classic download link is the fallback for desktop browsers.
+ * @param {string} filename
+ * @param {string} text
+ * @param {string} mime
+ * @returns {Promise<boolean>} true if the file was shared/downloaded
+ */
+async function shareOrDownload(filename, text, mime) {
+  const file = new File([text], filename, { type: mime });
+  try {
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: filename });
+      return true;
+    }
+  } catch (err) {
+    if (err.name === 'AbortError') return false;       // user closed the share sheet
+    console.warn('Share failed, falling back to download', err);
+  }
+  const url = URL.createObjectURL(file);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  return true;
+}
+
+/** Today's date as YYYY-MM-DD (for file names). */
+function todayStamp() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/** Exports the full database (plan, history, library, settings) as JSON — restorable with Import. */
+async function exportJson() {
+  const data = { ...db, timer: null };
+  const ok = await shareOrDownload(`gymlog-backup-${todayStamp()}.json`, JSON.stringify(data, null, 2), 'application/json');
+  if (ok) {
+    db.settings.lastExportAt = new Date().toISOString();
+    saveDb();
+    renderSettings();
+  }
+}
+
+/**
+ * Quotes a CSV cell when it contains a comma, quote or newline.
+ * @param {*} v
+ * @returns {string}
+ */
+function csvCell(v) {
+  const s = String(v ?? '');
+  return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+
+/** Exports finished workouts as CSV: one row per set (for Excel analysis). */
+async function exportCsv() {
+  const lines = ['date,workout,exercise,set,kg,reps'];
+  for (const s of [...db.history].reverse()) {          // oldest first reads more naturally in a sheet
+    const date = s.finishedAt.slice(0, 10);
+    for (const e of s.exercises) {
+      e.sets.forEach((x, i) =>
+        lines.push([date, s.workoutName || '', e.name, i + 1, fmtNum(x.kg), fmtNum(x.reps)].map(csvCell).join(',')));
+    }
+  }
+  await shareOrDownload(`gymlog-${todayStamp()}.csv`, lines.join('\n'), 'text/csv');
+}
+
+/**
+ * Restores a JSON backup. Replaces all current data after confirmation.
+ * @param {File} file
+ */
+async function importJson(file) {
+  if (!file) return;
+  try {
+    const data = JSON.parse(await file.text());
+    if (!data || !Array.isArray(data.history) || !Array.isArray(data.library)) {
+      throw new Error('This is not a Gym Log backup file.');
+    }
+    if (!confirm(`Replace ALL current data with this backup (${data.history.length} workouts)?`)) return;
+    stopRest();
+    db = normaliseDb({ ...data, timer: null });
+    saveDb();
+    renderAll();
+    showView('workout');
+    toast('Backup restored');
+  } catch (err) {
+    alert('Import failed: ' + err.message);
+  }
+}
+
+/* ==================================================================
+   12. EVENTS
+   One listener per event type on the document ("event delegation").
+   Buttons carry data-action="..."; this works for elements created
+   later by innerHTML, so we never re-attach listeners after a render.
+   ================================================================== */
+
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-action]');
+  if (!btn) return;
+  const ex = findActiveExercise(btn.dataset.ex);
+  if (db.active && !wakeLock) updateWakeLock();        // a tap is a good moment to (re)acquire it
+
+  switch (btn.dataset.action) {
+    case 'tab': showView(btn.dataset.view); break;
+
+    // --- week view ---
+    case 'start-workout': startWorkout(btn.dataset.wid); break;
+    case 'start-free': startWorkout(null); break;
+
+    // --- running workout ---
+    case 'add-exercise': openAddDialog({ kind: 'session' }); break;
+    case 'toggle-done': toggleSetDone(ex, btn.dataset.set); break;
+    case 'add-set': if (ex) addSet(ex); break;
+    case 'remove-set':
+      if (ex) { ex.sets = ex.sets.filter((s) => s.id !== btn.dataset.set); saveDb(); renderWorkout(); }
+      break;
+    case 'remove-exercise':
+      if (ex && confirm(`Remove ${ex.name} from today's workout?`)) {
+        db.active.exercises = db.active.exercises.filter((x) => x.id !== ex.id);
+        saveDb(); renderWorkout();
+      }
+      break;
+    case 'finish-workout': finishWorkout(); break;
+    case 'discard-workout': discardWorkout(); break;
+
+    // --- timer ---
+    case 'start-rest': if (ex) startRest(ex.restSec, ex.name); break;
+    case 'rest-plus': adjustRest(15); break;
+    case 'rest-minus': adjustRest(-15); break;
+    case 'rest-skip': stopRest(); break;
+
+    // --- plan ---
+    case 'plan-count': changeWorkoutCount(Number(btn.dataset.delta)); break;
+    case 'plan-remove-workout': removePlanWorkout(btn.dataset.wid); break;
+    case 'plan-add-ex': openAddDialog({ kind: 'plan', workoutId: btn.dataset.wid }); break;
+    case 'plan-move': movePlanExercise(btn.dataset.wid, btn.dataset.peid, Number(btn.dataset.dir)); break;
+    case 'plan-remove-ex': {
+      const w = findPlanWorkout(btn.dataset.wid);
+      const pe = w?.exercises.find((x) => x.id === btn.dataset.peid);
+      if (pe && confirm(`Remove ${pe.name} from ${w.name}? (History is kept.)`)) {
+        w.exercises = w.exercises.filter((x) => x !== pe);
+        saveDb(); renderPlan();
+      }
+      break;
+    }
+
+    // --- picker dialog ---
+    case 'pick-select': selectPick(pick.visible[Number(btn.dataset.idx)].name); break;
+    case 'pick-new': selectPick($('#pick-search').value.trim()); break;
+    case 'pick-chip': $('#pick-rest').value = btn.dataset.sec; break;
+    case 'pick-cancel': $('#dlg-add').close(); break;
+    case 'pick-confirm': confirmPick(); break;
+
+    // --- history ---
+    case 'delete-entry': deleteHistoryEntry(btn.dataset.session, Number(btn.dataset.exidx)); break;
+
+    // --- settings ---
+    case 'lib-add': {
+      const name = $('#lib-name').value.trim();
+      if (!name) break;
+      if (db.library.some((x) => nameKey(x.name) === nameKey(name))) { toast('Already in the library'); break; }
+      db.library.push({ name, group: $('#lib-group').value });
+      saveDb(); renderSettings(); toast(`Added ${name}`);
+      break;
+    }
+    case 'lib-remove': {
+      const item = db.library[Number(btn.dataset.idx)];
+      if (item && confirm(`Remove ${item.name} from the library? (Plan and history are kept.)`)) {
+        db.library.splice(Number(btn.dataset.idx), 1);
+        saveDb(); renderSettings();
+      }
+      break;
+    }
+    case 'export-json': exportJson(); break;
+    case 'export-csv': exportCsv(); break;
+    case 'reset-all':
+      if (confirm('Delete ALL workouts, the plan, settings and the exercise library?') &&
+          confirm('Are you sure? Export a backup first if you might need it.')) {
+        stopRest();
+        db = defaultDb();
+        saveDb(); renderAll(); showView('workout');
+      }
+      break;
+  }
+});
+
+// Typing: update data and save, without re-rendering (keeps the keyboard and focus).
+document.addEventListener('input', (e) => {
+  const el = e.target;
+  if (el.id === 'pick-search') { pick.selected = null; renderPickList(); return; }
+  if (el.id === 'hist-search') { historyFilter = el.value; renderHistoryList(); return; }
+
+  // Plan: workout name, sets, rest
+  if (el.dataset.planField) {
+    const w = findPlanWorkout(el.dataset.planWorkout);
+    if (!w) return;
+    const field = el.dataset.planField;
+    if (field === 'name') {
+      w.name = el.value;
+    } else {
+      const pe = w.exercises.find((x) => x.id === el.dataset.planEx);
+      const n = parseNum(el.value);
+      if (!pe || n == null) return;
+      pe[field] = field === 'sets' ? clampInt(n, 1, 10) : clampInt(n, 0, 3600);
+    }
+    saveDb();
+    return;
+  }
+
+  // Running workout: kg, reps, rest
+  const field = el.dataset.field;
+  const ex = findActiveExercise(el.dataset.ex);
+  if (!field || !ex) return;
+  if (field === 'rest') {
+    const n = parseNum(el.value);
+    if (n != null) ex.restSec = clampInt(n, 0, 3600);
+  } else {
+    const set = ex.sets.find((s) => s.id === el.dataset.set);
+    if (!set || set.done) return;
+    const n = parseNum(el.value);
+    set[field] = field === 'reps' && n != null ? Math.round(n) : n;
+  }
+  saveDb();
+});
+
+// "change" fires when an input loses focus: tidy values, settings, and the import file picker.
+document.addEventListener('change', (e) => {
+  const el = e.target;
+  if (el.id === 'import-file') { importJson(el.files[0]); el.value = ''; return; }
+
+  // Plan inputs: show the stored (clamped) value; an empty workout name gets its default back.
+  if (el.dataset.planField) {
+    const w = findPlanWorkout(el.dataset.planWorkout);
+    if (!w) return;
+    if (el.dataset.planField === 'name') {
+      w.name = el.value.trim() || defaultWorkoutName(db.plan.workouts.filter((x) => x !== w));
+      el.value = w.name;
+    } else {
+      const pe = w.exercises.find((x) => x.id === el.dataset.planEx);
+      if (pe) el.value = pe[el.dataset.planField];
+    }
+    saveDb();
+    return;
+  }
+
+  const key = el.dataset.setting;
+  if (!key) return;
+  if (el.type === 'checkbox') {
+    db.settings[key] = el.checked;
+  } else {
+    const n = parseNum(el.value);
+    if (n != null) db.settings[key] = key === 'defaultSets' ? clampInt(n, 1, 10) : clampInt(n, 0, 3600);
+    el.value = db.settings[key];
+  }
+  saveDb();
+  if (key === 'keepAwake') updateWakeLock();
+});
+
+// Enter in the picker's search box: add the exercise if one is selected.
+$('#pick-search').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); if (pick.selected) confirmPick(); }
+});
+
+// Coming back to the app (unlock phone / switch back): refresh timer, wake lock, and the week view
+// (the app may have been left open across midnight on Sunday → a new week).
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible') return;
+  if (db.timer) {
+    if (audioCtx && audioCtx.state !== 'running') audioCtx.resume().catch(() => {});
+    tick();
+  }
+  if (!db.active && !$('#view-workout').hidden) renderWeek();
+  updateWakeLock();
+});
+
+/* ==================================================================
+   13. START-UP
+   ================================================================== */
+
+/** Initial render, resume a running timer, register the service worker. */
+function init() {
+  saveDb();                 // writes back any upgrade done by normaliseDb (e.g. the new `plan`)
+  renderAll();
+  showView('workout');
+
+  if (db.timer) {
+    if (db.timer.endAt > Date.now()) runTimer();
+    else { db.timer = null; saveDb(); }
+  }
+
+  // Service workers only run in a "secure context" (HTTPS or localhost) — not from a local file.
+  if ('serviceWorker' in navigator && window.isSecureContext) {
+    navigator.serviceWorker.register('sw.js').catch((err) => console.warn('Service worker failed', err));
+  }
+  // Ask the browser not to evict our storage. Browsers may ignore this; it never hurts.
+  if (navigator.storage?.persist) navigator.storage.persist().catch(() => {});
+}
+
+init();
+</script>
+</body>
+</html>
